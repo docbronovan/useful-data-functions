@@ -83,52 +83,13 @@ points = df['column_name']
 data = is_outlier(points, thresh=3.5)
 
 
-#####################
-# # GOOGLE SHEETS # #
-#####################
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-
-def setup_google_creds():
-    """ use creds to create a client to interact with the Google Drive API. 
-        Code based on Twilio blog post:
-        https://www.twilio.com/blog/2017/02/an-easy-way-to-read-and-write-to-a-google-spreadsheet-in-python.html
-
-        :return: google client object 
-    """
-    print 'setup google client'
-    scope = ['https://spreadsheets.google.com/feeds']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
-    client = gspread.authorize(creds)
-    return client
-
-def get_spreadsheet_values(client, gsheet_name):
-    """
-    get values from google spreadsheet
-    :param sheet: google sheet object
-    :return: dataframe
-    """
-    print 'getting spreadsheet values'
-    sheet = client.open(gsheet_name).sheet1
-    # Find a workbook by name and open the first sheet. 
-    # Gspread only allows you to open a sheet named sheet1
-    try:
-        list_of_hashes = sheet.get_all_records()
-    except AttributeError:
-        send_error_email('get_spreadsheet_values: AttributeError', [])
-        list_of_hashes = []
-    sheet_values_df = pd.DataFrame(list_of_hashes)
-    return sheet_values_df
-
-
-
 ######################
 # # # POSTGRESQL # # #
 ######################
 import psycopg2
 import pandas as pd
 def set_cursor():
-    """ relies on set_postgres_params which reads sensative parameters from secrets.py """
+    """ relies on set_postgres_params which sets sensative parameters """
     postgres_host, postgres_user, postgres_pw, postgres_db = set_postgres_params()
     conn = psycopg2.connect(host=postgres_host, database=postgres_db, user=postgres_user, password=postgres_pw)
     cur = conn.cursor()
@@ -137,7 +98,7 @@ def set_cursor():
 
 def check_and_insert_postgres(cur, index_col, table_name, df_to_insert):
     """
-    Gets index value from table to check against. If not matched then we need to make a new row in the table.
+    Gets key value from table's index columns to check against. If not matched then we need to make a new row in the table.
     :param cur: cursor object
     :param index_col: str - col to check whether to insert
     :param table_name: str - table you want to check
@@ -185,3 +146,159 @@ def run_sql(sql, cur):
     cur.execute(sql)
     cur.execute("COMMIT;")
     return
+
+
+#####################
+# # GOOGLE SHEETS # #
+#####################
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+def setup_google_creds():
+    """ use creds to create a client to interact with the Google Drive API. 
+        Code based on Twilio blog post:
+        https://www.twilio.com/blog/2017/02/an-easy-way-to-read-and-write-to-a-google-spreadsheet-in-python.html
+
+        :return: google client object 
+    """
+    print 'setup google client'
+    scope = ['https://spreadsheets.google.com/feeds']
+    creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
+    client = gspread.authorize(creds)
+    return client
+
+def get_spreadsheet_values(client, gsheet_name):
+    """
+    get values from google spreadsheet
+    :param sheet: google sheet object
+    :return: dataframe
+    """
+    print 'getting spreadsheet values'
+    sheet = client.open(gsheet_name).sheet1
+    # Find a workbook by name and open the first sheet. 
+    # Gspread only allows you to open a sheet named sheet1
+    try:
+        list_of_hashes = sheet.get_all_records()
+    except AttributeError:
+        send_error_email('get_spreadsheet_values: AttributeError', [])
+        list_of_hashes = []
+    sheet_values_df = pd.DataFrame(list_of_hashes)
+    return sheet_values_df
+
+
+########################
+# # GOOGLE Analytics # #
+########################
+import httplib2
+from oauth2client.service_account import ServiceAccountCredentials
+from apiclient.discovery import build
+import datetime
+from datetime import timedelta
+
+def build_service_url():
+    print 'build service url'
+    json_file = 'GA_Account_Name_75c59894dab2.json'
+    credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                    json_file,
+                    ['https://www.googleapis.com/auth/analytics.readonly'])
+    # create a service object you'll later on to create reports
+    http = credentials.authorize(httplib2.Http())
+    service = build('analytics', 'v4', http=http,
+                    discoveryServiceUrl=('https://analyticsreporting.googleapis.com/$discovery/rest'))
+    return service
+
+
+def create_query_params(view_id, start_date, end_date):
+    """ This query returns total users between two dates.
+        You can find query parameter documentation here:
+        https://developers.google.com/analytics/devguides/reporting/core/v4/basics#metrics  
+        :param view_id: string
+        :param start_date: datetime object
+        :param end_date: datetime object
+        :return: dictionary
+    """
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
+    print "|| ", start_date_str, " - ", end_date_str
+    query_params = {'viewId': view_id,
+                    'dateRanges': [{'startDate': start_date_str, 'endDate': end_date_str}],
+                    'metrics': [{'expression': 'ga:users'}],
+                    'pageSize': 10
+                    }
+    return query_params
+
+
+def get_response(service, query_params):
+    """ :param service: google service obj
+        :param query_params: dictionary
+        :return: dictionary
+        Can check view Ids at: https://ga-dev-tools.appspot.com/account-explorer/
+          by selecting the account and view you want to query.
+    """
+    print 'get response'
+    response = service.reports().batchGet(
+                    body={
+                        'reportRequests': [query_params]
+                    }
+                ).execute()
+    return response
+
+
+def parse_response(response):
+    """ 
+    : param response: dictionary
+    :return: integer
+    The response back from the api is in the format below. The column names and types
+    are seperate from the data and metadata.
+    response.keys() >> [u'reports']
+    type(response['reports']) >> list
+    len(response['reports']) >> 1
+    Format of response['reports']
+    {u'columnHeader': 
+        {u'metricHeader': 
+            {u'metricHeaderEntries': 
+                [{u'name': u'ga:users',
+                  u'type': u'INTEGER'}]
+            }
+        },
+        u'data': 
+            {u'maximums': 
+                [{u'values': [u'999']}],
+             u'minimums': [{u'values': [u'999']}],
+             u'rowCount': 1,
+             u'rows': 
+                [{u'metrics': 
+                    [{u'values': [u'999']}]
+                }],
+             u'totals': 
+                [{u'values': [u'999']}]
+            }
+    }
+    """
+    val = []
+    for report in response.get('reports', []):
+        columnHeader = report.get('columnHeader', {})
+        metricHeaders = columnHeader.get('metricHeader', {}).get('metricHeaderEntries', [])
+        rows = report.get('data', {}).get('rows', [])
+        for row in rows:
+            dateRangeValues = row.get('metrics', [])
+            for i, values in enumerate(dateRangeValues):
+                for metricHeader, value in zip(metricHeaders, values.get('values')):
+                    val.append(int(value))
+    return val[0]
+
+
+service = build_service_url()
+view_id = '999999999'  # your viewId string
+d = 1  # set number of days to go back
+end_date = datetime.datetime.today() - timedelta(days=d)
+start_date = datetime.date(end_date.year, 1, 1)
+query_params = create_query_params(view_id, start_date, end_date)
+response = get_response(service, query_params)
+val = parse_response(response)
+
+
+
+
+
+
