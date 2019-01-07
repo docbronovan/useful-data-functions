@@ -1,3 +1,4 @@
+/* ADMIN */
 -- Find all running processes with:
 CREATE OR REPLACE VIEW public.active_locks AS 
  SELECT t.schemaname,
@@ -17,15 +18,12 @@ SELECT * FROM active_locks;
 -- and kill it with:
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid in (<lock-processes-from-above>);
 
-
 -- Grant schema/table access to user
 GRANT CONNECT ON DATABASE mydb TO xxx;
--- This assumes you're actually connected to mydb..
+-- This assumes you're actually connected to mydb.
 GRANT USAGE ON SCHEMA public TO xxx;
 GRANT SELECT ON mytable TO xxx;
-
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO xxx;
-
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
    GRANT SELECT ON TABLES TO xxx;
 
@@ -41,9 +39,11 @@ select current_user;
 
 select current_database();
 
+/* CALCULATIONS */
 -- avoid division by zero
 NULLIF(column_name,0)
 
+/* TABLE MODIFICATION */
 -- Delete duplicate rows when you dont have unique ids
 DELETE FROM dupes a
 WHERE a.ctid <> (SELECT min(b.ctid)
