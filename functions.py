@@ -1,5 +1,5 @@
 ################
-# # AVERAGES # #
+# # STATS # #
 ################
 def is_outlier(points, thresh=3.5):
     """
@@ -187,7 +187,7 @@ def get_spreadsheet_values(client, gsheet_name):
 
 
 ########################
-# # GOOGLE Analytics # #
+# # GOOGLE ANALYTICS # #
 ########################
 import httplib2
 from oauth2client.service_account import ServiceAccountCredentials
