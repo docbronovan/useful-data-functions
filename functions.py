@@ -1,7 +1,10 @@
 ################
 # # STATS # #
 ################
+
 import numpy as np
+
+
 def is_outlier(points, thresh=3.5):
     """
     Stack overflow answer from Joe Kington
@@ -78,21 +81,28 @@ def outlier_score(points):
 
     return modified_z_score
 
-""" to check for outliers in numeric column of a dataframe. You may set your own threshold.
+
+""" 
+    to check for outliers in numeric column of a dataframe. You may set your own threshold.
     is_outlier() accepts an array, list, or series returns true if outlier
+    
+        import pandas as pd
+        df = pd.DataFrame({"values":[1,2,2,2,2,3,77,89]})
+        points = df['values']
+        data = is_outlier(points, thresh=3.5)
+        avg = df[~data]['values'].mean()
+        # avg = 2
 """
-import pandas as pd
-df = pd.DataFrame({"values":[1,2,2,2,2,3,77,89]})
-points = df['values']
-data = is_outlier(points, thresh=3.5)
-avg = df[~data]['values'].mean()
-# avg = 2
+
 
 ######################
 # # # POSTGRESQL # # #
 ######################
 import psycopg2
 import pandas as pd
+from my_secrets import set_postgres_params
+
+
 def set_cursor():
     """ relies on set_postgres_params which sets sensative parameters """
     postgres_host, postgres_user, postgres_pw, postgres_db = set_postgres_params()
@@ -160,11 +170,11 @@ def run_sql(sql, cur):
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+
 def setup_google_creds():
     """ use creds to create a client to interact with the Google Drive API. 
         Code based on Twilio blog post:
         https://www.twilio.com/blog/2017/02/an-easy-way-to-read-and-write-to-a-google-spreadsheet-in-python.html
-
         :return: google client object 
     """
     print('setup google client')
@@ -172,6 +182,7 @@ def setup_google_creds():
     creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
     client = gspread.authorize(creds)
     return client
+
 
 def get_spreadsheet_values(client, gsheet_name):
     """
@@ -196,15 +207,15 @@ def get_spreadsheet_values(client, gsheet_name):
 ########################
 # # GOOGLE ANALYTICS # #
 ########################
+# https://developers.google.com/api-client-library/python/start/get_started #
 import httplib2
 from oauth2client.service_account import ServiceAccountCredentials
-from apiclient.discovery import build
-import datetime
-from datetime import timedelta
+from googleapiclient.discovery import build
+
 
 def build_service_url():
     print('build service url')
-    json_file = 'GA_Account_Name_75c59894dab2.json'
+    json_file = 'GA_Account_Name_75c59894dab2.json'  # your service account private key json file
     credentials = ServiceAccountCredentials.from_json_keyfile_name(
                     json_file,
                     ['https://www.googleapis.com/auth/analytics.readonly'])
@@ -253,7 +264,7 @@ def get_response(service, query_params):
 
 def parse_response(response):
     """ 
-    : param response: dictionary
+    :param response: dictionary
     :return: integer
     The response back from the api is in the format below. The column names and types
     are seperate from the data and metadata.
@@ -290,22 +301,207 @@ def parse_response(response):
         for row in rows:
             daterangevalues = row.get('metrics', [])
             for i, values in enumerate(daterangevalues):
-                for metricHeader, value in zip(metricheaders, values.get('values')):
+                for metricheader, value in zip(metricheaders, values.get('values')):
                     val.append(int(value))
-    return val[0]
+    return val
 
 
-service = build_service_url()
-view_id = '999999999'  # your viewId string
-d = 1  # set number of days to go back
-end_date = datetime.datetime.today() - timedelta(days=d)
-start_date = datetime.date(end_date.year, 1, 1)
-query_params = create_query_params(view_id, start_date, end_date)
-response = get_response(service, query_params)
-val = parse_response(response)
+"""
+    EXAMPLE USAGE
+    service = build_service_url()
+    view_id = '999999999'  # your viewId string
+    d = 1  # set number of days to go back
+    end_date = datetime.datetime.today() - timedelta(days=d)
+    start_date = datetime.date(end_date.year, 1, 1)
+    query_params = create_query_params(view_id, start_date, end_date)
+    response = get_response(service, query_params)
+    val = parse_response(response)
+"""
 
 
+######################################
+# # # SEND EMAIL VIA MAILGUN API # # #
+######################################
+"""
+To use send_error_email(), use a try/except around main
+if __name__ == "__main__":
+    errors_to_ignore = ['502', '500']
+    try:
+        main()
+        print "Script Finished Successfully"
+    except Exception, e:
+        send_error_email(e, errors_to_ignore)
+
+To send a dataframe as a html table:
+    import datetime
+    dateobj = datetime.datetime.today()
+    df_two = pd.DataFrame({"names":['first','second','third'],
+                       "values":[1,2,89]})
+    subject = "Test email"
+    report_name = "Test Report"
+    html = create_table_header(dateobj, report_name)
+    html = create_html_table(df_two, html)
+    html += "<br><br><br><br>"
+    send_html_mailgun(subject, html, ['youremail@gmail.com'])
+"""
+import subprocess
+import sys
+import os
+from my_secrets import set_mailgun_api
 
 
+def send_error_email(e, errors_to_ignore, recipients=['youremail@gmail.com']):
+    """
+    This is meant to be used as an email alert when a script fails for whatever reason
+    :param e:
+    :param errors_to_ignore:
+    :param recipients:
+    :return:
+    """
+    send = check_errors(e, errors_to_ignore)
+    if send:
+        # subject = "Error"
+        subject = sys.argv[0].split('/')[-1]  # this is the name of the python script being executed
+        body = str(e)
+        send_html_mailgun(subject, body, recipients)
+    return
 
 
+def check_errors(e, errors_to_ignore):
+    """
+    This function was created to allow you to ignore an error if you would like, if the error is included in the
+    'errors to ignore' list, don't send an email
+    :param e: error
+    :param errors_to_ignore: list
+    """
+    print("ERROR: {}".format(e))
+    # if the error is in any of the errors_to_ignore list, don't send
+    send = 1
+    for err in errors_to_ignore:
+        if err in str(e):
+            send = 0
+            break
+        else:
+            send = 1
+    return send
+
+
+def send_html_mailgun(subject, body, recipients=['youremail@gmail.com']):
+    """
+    calls create function which returns a bash command. Use subprocess to run this bash command, then
+    remove html file created in create_mailgun_html
+    :param subject:
+    :param body:
+    :param recipients:
+    :return: None
+    """
+    bash_command, local_temp_path = create_mailgun_html(subject, body, recipients)
+    subprocess.call(bash_command, shell=True)
+    os.remove(local_temp_path)
+    return
+
+
+def create_mailgun_html(subject, html, recipients=['youremail@gmail.com']):
+    """
+    Retrieve mailgun parameters from my_secrets file - contains api key and sending domain.
+    Creates bash command run by send_html_mailgun(). Creates local html file (mailgun_html.html),
+    then calls create_html_email_command
+    :param subject:
+    :param html:
+    :param recipients:
+    :return: bash_command
+    """
+    mailgun_api, domain = set_mailgun_api()
+    temp_file = 'maligun_html.html'
+    local_temp_path = os.getcwd() + '/' + temp_file
+    with open(local_temp_path, 'w') as f:
+        f.write(html)
+
+    recipient_str = ''
+    for recipient in recipients:
+        recipient_str += ' -F    to=' + recipient
+
+    bash_command = create_html_email_command(mailgun_api, domain, recipient_str, subject, local_temp_path)
+    return bash_command, local_temp_path
+
+
+def create_html_email_command(mailgun_api, domain, recipient_str, subject, local_temp_path):
+    """
+    create actual bash command, bash is sensitive to spaces and capitalization so be careful with any changes
+    :param mailgun_api:
+    :param domain:
+    :param recipient_str:
+    :param subject:
+    :param local_temp_path:
+    :return:
+    """
+    bash_command = """curl -s --user \
+                        'api:key-{}' \
+                        https://api.mailgun.net/v3/{}/messages \
+                        -F    from='Analytic Server <mailgun@{}>' \
+                        {} \
+                        -F    subject='{}' \
+                        -F    html=\"<-\" \"$@\" < {}""".format(mailgun_api, domain, domain,
+                                                                recipient_str, subject, local_temp_path)
+    return bash_command
+
+
+def create_html_table(df, html):
+    # begin the table
+    html += '<table id="tableid">'
+    # column headers
+    html += "<tr>"
+    columns = df.columns
+    for col in columns:
+        html += "<th>{}</th>".format(col)
+    html += "</tr>"
+    # table - create row by row
+    for i in range(df.shape[0]):
+        row = df.iloc[i]
+        html += "<tr>"
+        for c in range(df.shape[1]):
+            html += "<td>{}</td>".format(row[c])
+        html += "</tr>"
+    # end the table
+    html += "</table>"
+    # format headers
+    return html
+
+
+def create_table_header(dateobj, report_name, dateformat="%B, %Y"):
+    """
+    :param dateobj: datetime object
+    :param report_name: str
+    :return: html
+    """
+    html = """<!DOCTYPE html>
+                <html>
+                    <head>
+                        <style>
+                            #tableid {
+                                font-family: "Trebuchet MS", Arial, Helvetica, sans-serif;
+                                border-collapse: collapse;
+                                width: 100%;
+                            }
+                            #tableid td, #tableid th {
+                                border: 1px solid #ddd;
+                                padding: 8px;
+                            }
+                            #tableid tr:nth-child(even){background-color: #f2f2f2;}
+                            #tableid tr:hover {background-color: #ddd;}
+                            #tableid th {
+                                padding-top: 12px;
+                                padding-bottom: 12px;
+                                text-align: left;
+                                background-color: #06AAE2;
+                                color: #363636;
+                            }
+                            h4,#dates{
+                                font-family: "Trebuchet MS", Arial, Helvetica, sans-serif;
+                            }
+                        </style>
+                    </head>
+                <body>"""
+    html += "<h4>{}</h4><div></div>".format(report_name)
+    html += "<p id=\"dates\">{}</hp><div></div>".format(dateobj.strftime(dateformat))
+    return html
