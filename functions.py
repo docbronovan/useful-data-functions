@@ -1,6 +1,7 @@
 ################
 # # STATS # #
 ################
+import numpy as np
 def is_outlier(points, thresh=3.5):
     """
     Stack overflow answer from Joe Kington
@@ -77,11 +78,15 @@ def outlier_score(points):
 
     return modified_z_score
 
-""" to check for outliers in numeric column of a dataframe. You may set your own threshold
+""" to check for outliers in numeric column of a dataframe. You may set your own threshold.
+    is_outlier() accepts an array, list, or series returns true if outlier
 """
-points = df['column_name']
+import pandas as pd
+df = pd.DataFrame({"values":[1,2,2,2,2,3,77,89]})
+points = df['values']
 data = is_outlier(points, thresh=3.5)
-
+avg = df[~data]['values'].mean()
+# avg = 2
 
 ######################
 # # # POSTGRESQL # # #
@@ -98,7 +103,8 @@ def set_cursor():
 
 def check_and_insert_postgres(cur, index_col, table_name, df_to_insert):
     """
-    Gets key value from table's index columns to check against. If not matched then we need to make a new row in the table.
+    Gets key value from table's index columns to check against. If not matched then we need to make a
+    new row in the table.
     :param cur: cursor object
     :param index_col: str - col to check whether to insert
     :param table_name: str - table you want to check
@@ -107,11 +113,11 @@ def check_and_insert_postgres(cur, index_col, table_name, df_to_insert):
     """
     sql = 'select {} from {};'.format(index_col, table_name)
     column_names_str = ','.join(list(df_to_insert.columns.values))
-    alread_written = return_sql(sql, cur, column_names_str)
+    already_written = return_sql(sql, cur, column_names_str)
     for value in df_to_insert[index_col]:
         if value not in already_written:
             row_values = df_to_insert.loc[df_to_insert[index_col] == value].iloc[0].values
-            row_values_str = '\',\''.join([unicode(i) for i in row_values])
+            row_values_str = '\',\''.join([str(i) for i in row_values])
             sql = """INSERT INTO {} ({}) VALUES ('{}');""".format(table_name, column_names_str, row_values_str)
             try:
                 run_sql(sql, cur)
@@ -161,7 +167,7 @@ def setup_google_creds():
 
         :return: google client object 
     """
-    print 'setup google client'
+    print('setup google client')
     scope = ['https://spreadsheets.google.com/feeds']
     creds = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', scope)
     client = gspread.authorize(creds)
@@ -170,17 +176,18 @@ def setup_google_creds():
 def get_spreadsheet_values(client, gsheet_name):
     """
     get values from google spreadsheet
-    :param sheet: google sheet object
+    :param client: google sheet object
+    :param gsheet_name: string, name of google sheet to retrieve data from
     :return: dataframe
     """
-    print 'getting spreadsheet values'
+    print('getting spreadsheet values')
     sheet = client.open(gsheet_name).sheet1
     # Find a workbook by name and open the first sheet. 
     # Gspread only allows you to open a sheet named sheet1
     try:
         list_of_hashes = sheet.get_all_records()
     except AttributeError:
-        send_error_email('get_spreadsheet_values: AttributeError', [])
+        print('get_spreadsheet_values: AttributeError')
         list_of_hashes = []
     sheet_values_df = pd.DataFrame(list_of_hashes)
     return sheet_values_df
@@ -196,7 +203,7 @@ import datetime
 from datetime import timedelta
 
 def build_service_url():
-    print 'build service url'
+    print('build service url')
     json_file = 'GA_Account_Name_75c59894dab2.json'
     credentials = ServiceAccountCredentials.from_json_keyfile_name(
                     json_file,
@@ -219,7 +226,7 @@ def create_query_params(view_id, start_date, end_date):
     """
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
-    print "|| ", start_date_str, " - ", end_date_str
+    print("|| ", start_date_str, " - ", end_date_str)
     query_params = {'viewId': view_id,
                     'dateRanges': [{'startDate': start_date_str, 'endDate': end_date_str}],
                     'metrics': [{'expression': 'ga:users'}],
@@ -235,7 +242,7 @@ def get_response(service, query_params):
         Can check view Ids at: https://ga-dev-tools.appspot.com/account-explorer/
           by selecting the account and view you want to query.
     """
-    print 'get response'
+    print('get response')
     response = service.reports().batchGet(
                     body={
                         'reportRequests': [query_params]
@@ -254,7 +261,7 @@ def parse_response(response):
     type(response['reports']) >> list
     len(response['reports']) >> 1
     Format of response['reports']
-    {u'columnHeader': 
+    {u'columnheader':
         {u'metricHeader': 
             {u'metricHeaderEntries': 
                 [{u'name': u'ga:users',
@@ -277,13 +284,13 @@ def parse_response(response):
     """
     val = []
     for report in response.get('reports', []):
-        columnHeader = report.get('columnHeader', {})
-        metricHeaders = columnHeader.get('metricHeader', {}).get('metricHeaderEntries', [])
+        columnheader = report.get('columnheader', {})
+        metricheaders = columnheader.get('metricHeader', {}).get('metricHeaderEntries', [])
         rows = report.get('data', {}).get('rows', [])
         for row in rows:
-            dateRangeValues = row.get('metrics', [])
-            for i, values in enumerate(dateRangeValues):
-                for metricHeader, value in zip(metricHeaders, values.get('values')):
+            daterangevalues = row.get('metrics', [])
+            for i, values in enumerate(daterangevalues):
+                for metricHeader, value in zip(metricheaders, values.get('values')):
                     val.append(int(value))
     return val[0]
 
