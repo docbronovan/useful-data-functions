@@ -505,3 +505,5 @@ def create_table_header(dateobj, report_name, dateformat="%B, %Y"):
     html += "<h4>{}</h4><div></div>".format(report_name)
     html += "<p id=\"dates\">{}</hp><div></div>".format(dateobj.strftime(dateformat))
     return html
+
+# # OTHER # #
